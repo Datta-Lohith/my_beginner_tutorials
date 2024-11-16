@@ -21,6 +21,10 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)  # For custom service generation
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(catch_ros2 REQUIRED)  # Add Catch2
 
 # Enable custom service generation
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -30,16 +34,15 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 
 # Build talker (publisher) node
 add_executable(talker src/publisher.cpp)
-ament_target_dependencies(talker rclcpp std_msgs)
+ament_target_dependencies(talker rclcpp std_msgs tf2 tf2_ros)
 
 # Build listener (subscriber) node
 add_executable(listener src/subscriber.cpp)
-ament_target_dependencies(listener rclcpp std_msgs)
+ament_target_dependencies(listener rclcpp std_msgs tf2 tf2_ros)
 
 # ROS Interface dependencies for custom service
 rosidl_get_typesupport_target(typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_link_libraries(talker ${typesupport_target})
-# target_link_libraries(listener ${typesupport_target})
 
 # Install binaries and launch files
 install(TARGETS
@@ -50,43 +53,30 @@ install(TARGETS
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME})
 
-
-# Google C++ Style and Lint checks
+# Catch2 Tests
 if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
+  include(CTest)
+  # Skip linters
+  set(ament_cmake_cppcheck_FOUND TRUE)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
+  set(ament_cmake_flake8_FOUND TRUE)
+  set(ament_cmake_uncrustify_FOUND TRUE)
+  set(ament_cmake_lint_cmake_FOUND TRUE)
+
+  # Add Catch2 test executable
+  set(TESTFILES
+    test/test_talker.cpp)  # Specify the test file
+
+  add_executable(test_talker ${TESTFILES})
+  target_link_libraries(test_talker catch_ros2::catch_ros2_with_node_main ${typesupport_target})
+  ament_target_dependencies(test_talker rclcpp std_msgs)
   
-  ament_lint_auto_find_test_dependencies()
+  install(TARGETS test_talker
+    DESTINATION lib/${PROJECT_NAME})
+
+  # Register the test with catch_ros2
+  catch_ros2_add_integration_test(${PROJECT_NAME}_test LAUNCH_FILE test.launch.py)
 endif()
-
-# Check if cpplint executable is available
-find_program(CPPLINT_EXECUTABLE cpplint)
-if(CPPLINT_EXECUTABLE)
-  # Run cpplint when configuring the project
-  message(DEBUG " - Running cpplint on source files")
-  execute_process(
-    COMMAND ${CPPLINT_EXECUTABLE} --filter=-build/c++11,+build/c++17,-build/namespaces,-build/include_order src/*.cpp
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    OUTPUT_FILE ${CMAKE_BINARY_DIR}/results/cpplint.txt
-    RESULT_VARIABLE CPPLINT_RESULT
-    COMMAND echo "Running cpplint on source files"
-  )
-endif()
-
-# Check if clang-tidy executable is available
-find_program(CLANG_TIDY_EXECUTABLE clang-tidy)
-if(CLANG_TIDY_EXECUTABLE)
-  message(DEBUG " - Running clang-tidy on source files")
-  # Run clang-tidy when configuring the project
-  execute_process(
-    COMMAND ${CLANG_TIDY_EXECUTABLE} --extra-arg=-stdlib=libc++ --extra-arg=-I/usr/include/c++/11 --extra-arg=-I/usr/include/x86_64-linux-gnu/c++/11 src/*.cpp
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    OUTPUT_FILE ${CMAKE_BINARY_DIR}/results/clang-tidy.txt
-    RESULT_VARIABLE CLANG_TIDY_RESULT
-  )
-
-endif()
-
 
 ament_package()
