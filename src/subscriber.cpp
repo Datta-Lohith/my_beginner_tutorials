@@ -5,6 +5,7 @@
  * @version 2.0
  * @date 2024-11-06
  * @copyright Copyright (c) 2024
+ * @license Apache 2.0
  */
 
 #include <functional>
