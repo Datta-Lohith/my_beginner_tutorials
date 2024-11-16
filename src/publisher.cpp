@@ -2,19 +2,21 @@
  * @file publisher.cpp
  * @brief This file contains the implementation of the MinimalPublisher class.
  * @author Datta Lohith Gannavarapu
- * @version 2.0
- * @date 2024-11-06
+ * @version 3.0
+ * @date 2024-11-15
  * @copyright Copyright (c) 2024
+ * @license Apache 2.0
  */
 
-
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_ros/static_transform_broadcaster.h>
 #include <ctime>
 #include <memory>
-#include <rclcpp/logging.hpp>
 #include <string>
-
-#include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/string.hpp"
+#include <rclcpp/logging.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/string.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include "beginner_tutorials/srv/change_string.hpp"  // Include the service header
 
 using std::placeholders::_1;
@@ -22,18 +24,15 @@ using std::placeholders::_2;
 
 /**
  * @class MinimalPublisher
- * @brief A simple ROS 2 node that publishes messages to a topic and provides a service to change the message.
- * 
- * This node initializes a publisher to the "custom_topic" and publishes a message that includes the current time.
- * It also provides a service "change_message" that allows the message content to be changed dynamically.
+ * @brief A ROS 2 node that publishes messages to a topic, broadcasts a static transform, 
+ * and provides a service to change the message.
  */
 class MinimalPublisher : public rclcpp::Node {
  public:
   /**
    * @brief Constructs the MinimalPublisher node.
    * 
-   * Initializes the publisher on the "custom_topic" and the service to change the message content.
-   * A timer is set up to publish a message every 500 ms.
+   * Initializes the publisher on "custom_topic", the "change_message" service, and the static transform broadcaster.
    */
   MinimalPublisher() : Node("minimal_publisher"),
     message_content_("My name is Datta Lohith Gannavarapu.") {
@@ -63,16 +62,17 @@ class MinimalPublisher : public rclcpp::Node {
       "change_message",
         std::bind(&MinimalPublisher::ChangeMessageService, this, _1, _2));
 
+    // Initialize the static transform broadcaster
+    tf_static_broadcaster_ =
+      std::make_shared<tf2_ros::StaticTransformBroadcaster>(this);
+
     RCLCPP_INFO_STREAM(this->get_logger(),
       "MinimalPublisher node initialized.");
   }
 
  private:
   /**
-   * @brief Callback function that publishes the message with the current time.
-   * 
-   * This callback is triggered every 500 ms by the timer. It creates a message 
-   * with the current time and publishes it to the "custom_topic".
+   * @brief Timer callback that publishes the message and broadcasts a static transform.
    */
   void TimerCallback() {
     auto message = std_msgs::msg::String();
@@ -83,13 +83,13 @@ class MinimalPublisher : public rclcpp::Node {
     RCLCPP_INFO_STREAM(this->get_logger(), "Publishing: " +
       message.data);
     publisher_->publish(message);
+
+    // Broadcast the static transform
+    broadcast_transform();
   }
 
   /**
    * @brief Service callback that changes the message content.
-   * 
-   * This service callback allows the message content to be changed. It sets
-   * the new message based on the incoming request and logs the updated message.
    * 
    * @param request The service request containing the new message content.
    * @param response The service response indicating success.
@@ -103,36 +103,48 @@ class MinimalPublisher : public rclcpp::Node {
     message_content_ = request->message;
     response->success = true;
     RCLCPP_INFO_STREAM(this->get_logger(), "Message content updated to: "
-      + message_content_);
+      << message_content_);
   }
 
-  // Timer to trigger the publisher
-  rclcpp::TimerBase::SharedPtr timer_;
-
-  // Publisher handle for publishing messages to 'custom_topic'
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
-
   /**
-   * @brief Service handle for the 'change_message' service.
-   * 
-   * This handle allows the service to be called to update the message content.
+   * @brief Broadcasts a static transform between the "world" and "talk" frames.
    */
+  void broadcast_transform() {
+    geometry_msgs::msg::TransformStamped transform;
+    transform.header.stamp = this->get_clock()->now();
+    transform.header.frame_id = "world";
+    transform.child_frame_id = "talk";
+
+    // Translation in meters
+    transform.transform.translation.x = 0.2;
+    transform.transform.translation.y = 0.0;
+    transform.transform.translation.z = 0.6;
+
+    // Orientation (quaternion)
+    tf2::Quaternion q;
+    q.setRPY(0.0, 0.0473595, 0.0);  // Roll, pitch, yaw in radians
+    transform.transform.rotation.x = q.x();
+    transform.transform.rotation.y = q.y();
+    transform.transform.rotation.z = q.z();
+    transform.transform.rotation.w = q.w();
+
+    tf_static_broadcaster_->sendTransform(transform);
+  }
+
+  rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
   rclcpp::Service<beginner_tutorials::srv::ChangeString>::SharedPtr
     change_message_service_;
-
-  // The current message content
+  std::shared_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_broadcaster_;
   std::string message_content_;
 };
 
 /**
  * @brief Main function to initialize and run the MinimalPublisher node.
  * 
- * This function initializes the ROS 2 system, spins the node, and shuts it down
- * once the node has finished executing.
- * 
- * @param argc The argument count.
- * @param argv The argument values.
- * @return int The exit status.
+ * @param argc Argument count.
+ * @param argv Argument values.
+ * @return int Exit status.
  */
 int main(int argc, char* argv[]) {
   rclcpp::init(argc, argv);
